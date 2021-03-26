@@ -89,6 +89,7 @@ module arm (input  logic        clk, reset,
    logic        ALUSrcE, BranchTakenE, MemtoRegW,
                 PCSrcW, RegWriteW;
    logic [3:0]  ALUFlagsE;
+   logic [3:0]  CurFlagsE;
    logic [31:0] InstrD;
    logic        RegWriteM, MemtoRegE, PCWrPendingF;
    logic [1:0]  ForwardAE, ForwardBE;
@@ -110,6 +111,7 @@ module arm (input  logic        clk, reset,
                  .MemtoRegW(MemtoRegW),
                  .PCSrcW(PCSrcW),
                  .RegWriteW(RegWriteW),
+                 .CurFlagsE(CurFlagsE),
                  // hazard interface
                  .RegWriteM(RegWriteM),
                  .MemtoRegE(MemtoRegE),
@@ -127,6 +129,7 @@ module arm (input  logic        clk, reset,
                 .MemtoRegW(MemtoRegW),
                 .PCSrcW(PCSrcW),
                 .RegWriteW(RegWriteW),
+                .FlagsE(CurFlagsE),
                 .PCF(PCF),
                 .InstrF(InstrF),
                 .InstrD(InstrD),
@@ -177,6 +180,7 @@ module controller (input  logic         clk, reset,
                    output logic [3:0]   ALUControlE,
                    output logic         MemWriteM,
                    output logic         MemtoRegW, PCSrcW, RegWriteW,
+                   output logic [3:0]   CurFlagsE,
                    // hazard interface
                    output logic         RegWriteM, MemtoRegE,
                    output logic         PCWrPendingF,
@@ -254,11 +258,17 @@ module controller (input  logic         clk, reset,
                                 RegWriteD, PCSrcD, MemtoRegD, MemStrobeD}),
                             .q({FlagWriteE, BranchE, MemWriteE, 
                                 RegWriteE, PCSrcE, MemtoRegE, MemStrobeE}));
-   flopenr #(3)  regsE(.clk(clk),
+   flopenr #(1)  regsE(.clk(clk),
                      .reset(reset),
                      .en(MemSysReady),
-                     .d({ALUSrcD, ALUControlD}), //ALUControlD[3:0]
-                     .q({ALUSrcE, ALUControlE})); //ALUControlE[3:0]
+                     .d(ALUSrcD), 
+                     .q(ALUSrcE));
+
+    flopenr #(4) ALUContregE(.clk(clk),
+                     .reset(reset),
+                     .en(MemSysReady),
+                     .d(ALUControlD), //ALUControlD[3:0]
+                     .q(ALUControlE)); //ALUControlE[3:0])
    
    flopenr  #(4) condregE(.clk(clk),
                         .reset(reset),
@@ -350,6 +360,7 @@ module datapath (input  logic        clk, reset,
                  input  logic        ALUSrcE, BranchTakenE,
                  input  logic [3:0]  ALUControlE, 
                  input  logic        MemtoRegW, PCSrcW, RegWriteW,
+                 input  logic [3:0]  FlagsE,
                  output logic [31:0] PCF,
                  input  logic [31:0] InstrF,
                  output logic [31:0] InstrD,
@@ -498,6 +509,7 @@ module datapath (input  logic        clk, reset,
                         .y(SrcBE));
    alu         alu (.a(SrcAE),
                     .b(SrcBE),
+                    .c(FlagsE[2]),
                     .ALUControl(ALUControlE),
                     .Result(ALUResultE),
                     .Flags(ALUFlagsE));
@@ -665,6 +677,7 @@ endmodule // extend
 
 module alu (input  logic [31:0] a, b,
             input  logic [3:0]  ALUControl,
+            input  logic        c,
             output logic [31:0] Result,
             output logic [3:0]  Flags);
 
@@ -790,7 +803,7 @@ endmodule // eqcmp
 module shifter (input  logic [31:0] data,
 				input  logic [11:0]  src2,
 				input  logic 		I,
-				output logic [31:0] out)
+				output logic [31:0] out);
 	
 	logic [3:0] rot;
 	logic [7:0] imm8;
@@ -803,7 +816,7 @@ module shifter (input  logic [31:0] data,
 	assign sh = src2[6:5];
 	
 	always_comb
-		if (I == 0) {
+		if (I == 0) begin
 			case(sh)
 				2'b00: out = data<<shamt5;
 				2'b01: out = data>>shamt5;
@@ -811,9 +824,7 @@ module shifter (input  logic [31:0] data,
 				2'b11: out = (data>>shamt5)|(data<<(32-shamt5));
 				default: out = 32'bx;
 			endcase
-		}
-		else {
+		end
+		else
 			out = imm8>>2*rot|(imm8<<(32-2*rot));
-		}
-endmodule
-
+endmodule //shifter
