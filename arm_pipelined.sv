@@ -374,6 +374,7 @@ module datapath (input  logic        clk, reset,
    logic [3:0]  WA3E, WA3M, WA3W;
    logic        Match_1D_E, Match_2D_E;
    logic [2:0]  RegSrcE, RegSrcM, RegSrcW;
+   logic [31:0] PostShiftD;
       
    // Fetch stage
    mux2 #(32) pcnextmux (.d0(PCPlus4F),
@@ -435,6 +436,10 @@ module datapath (input  logic        clk, reset,
    extend      ext (.Instr(InstrD[23:0]),
                     .ImmSrc(ImmSrcD),
                     .ExtImm(ExtImmD));
+   shifter     shifter (.data(rd2D),
+                        .src2(InstrD[11:0]),
+                        .I(InstrD[25]),
+                        .out(PostShiftD));
    
    // Execute Stage
    flopenr #(32) rd1reg (.clk(clk),
@@ -445,7 +450,7 @@ module datapath (input  logic        clk, reset,
    flopenr #(32) rd2reg (.clk(clk),
                        .reset(reset),
                        .en(MemSysReady),
-                       .d(rd2D),
+                       .d(PostShiftD),
                        .q(rd2E));
    flopenr #(32) immreg (.clk(clk),
                        .reset(reset),
@@ -780,4 +785,35 @@ module eqcmp #(parameter WIDTH = 8)
    assign y = (a == b); 
 
 endmodule // eqcmp
+
+  
+module shifter (input  logic [31:0] data,
+				input  logic [11:0]  src2,
+				input  logic 		I,
+				output logic [31:0] out)
+	
+	logic [3:0] rot;
+	logic [7:0] imm8;
+	logic [4:0] shamt5;
+	logic [1:0] sh;
+	
+	assign rot = src2[11:8];
+	assign imm8 = src2[7:0];
+	assign shamt5 = src2[11:7];
+	assign sh = src2[6:5];
+	
+	always_comb
+		if (I == 0) {
+			case(sh)
+				2'b00: out = data<<shamt5;
+				2'b01: out = data>>shamt5;
+				2'b10: out = data>>>shamt5;
+				2'b11: out = (data>>shamt5)|(data<<(32-shamt5));
+				default: out = 32'bx;
+			endcase
+		}
+		else {
+			out = imm8>>2*rot|(imm8<<(32-2*rot));
+		}
+endmodule
 
